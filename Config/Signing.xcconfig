@@ -1,0 +1,11 @@
+// Ad-hoc signing, so anyone can build. macOS ties Accessibility and Screen Recording grants to the signature,
+// and an ad-hoc one changes with every build, so you'd grant them again after each rebuild.
+// To keep grants across rebuilds, sign with your own certificate in Config/Local.xcconfig (gitignored):
+//   DEVELOPMENT_TEAM = <your team ID>
+//   CODE_SIGN_IDENTITY = <certificate name, or its SHA-1 from `security find-identity -v -p codesigning`>
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+PROVISIONING_PROFILE_SPECIFIER =
+
+#include? "Local.xcconfig"

@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+build/
+DerivedData/
+*.xcodeproj/
+xcuserdata/
+.swiftpm/
+.env
+FocusCore/evals/
+Config/Local.xcconfig
