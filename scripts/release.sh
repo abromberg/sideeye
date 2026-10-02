@@ -38,7 +38,8 @@ PLIST="$APP/Contents/Info.plist"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$PLIST")
 FEED=$(/usr/libexec/PlistBuddy -c "Print SUFeedURL" "$PLIST")
 mkdir -p "$DIST"
-ZIP="$DIST/Side-Eye-$VERSION.zip"
+# A fixed name, so releases/latest/download/Side-Eye.zip always gets the newest version.
+ZIP="$DIST/Side-Eye.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
 # notarytool exits 0 even when Apple rejects the build, so check the verdict.
 NOTARY=$(xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait)
@@ -59,4 +60,5 @@ TAG="v$VERSION"
   --download-url-prefix "${FEED%/latest/download/appcast.xml}/download/$TAG/" "$DIST"
 echo
 echo "Ready in $DIST. To publish:"
-echo "  gh release create $TAG \"$ZIP\" \"$DIST/appcast.xml\" --title \"Side Eye $VERSION\" --generate-notes"
+echo "  gh release create $TAG \"$ZIP\" \"$DIST/appcast.xml\" --title \"Side Eye $VERSION\" --generate-notes \\"
+echo "    --notes \"**To install:** download \\\`Side-Eye.zip\\\` below, unzip it and drag Side Eye into Applications. Requires macOS 26. (\\\`appcast.xml\\\` is for automatic updates; you don't need it.)\""

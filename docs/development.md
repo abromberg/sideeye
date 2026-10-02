@@ -117,7 +117,7 @@ For each release:
    ```sh
    DEVELOPER_ID="Developer ID Application: Experimental LLC (<team ID>)" scripts/release.sh
    ```
-   The zip and `appcast.xml` end up in `build/release/dist/`.
+   `Side-Eye.zip` and `appcast.xml` end up in `build/release/dist/`. The zip keeps the same name every release so the README's download link (`releases/latest/download/Side-Eye.zip`) always points at the newest version.
 3. Publish with the `gh release create` command the script prints.
 
 ## Tuning with focuseval
