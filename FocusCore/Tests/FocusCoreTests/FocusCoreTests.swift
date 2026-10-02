@@ -146,6 +146,18 @@ import Testing
     }
 }
 
+@Suite struct CreditTests {
+    @Test func keyLimit() {
+        #expect(Credit.keyRemaining(Data(#"{"data":{"limit":50,"limit_remaining":48.34,"usage":1.66}}"#.utf8)) == 48.34)
+        #expect(Credit.keyRemaining(Data(#"{"data":{"limit":null,"limit_remaining":null,"usage":1.66}}"#.utf8)) == nil)
+    }
+
+    @Test func accountBalance() {
+        #expect(Credit.accountRemaining(Data(#"{"data":{"total_credits":10,"total_usage":10.25}}"#.utf8)) == -0.25)
+        #expect(Credit.accountRemaining(Data(#"{"error":{"code":403,"message":"Only management keys"}}"#.utf8)) == nil)
+    }
+}
+
 @Suite struct StatsTests {
     @Test func summaryFormat() {
         var s = BlockStats()

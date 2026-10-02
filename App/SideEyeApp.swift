@@ -106,6 +106,7 @@ struct MenuBarLabel: View {
         case .idle: return "Side Eye, ready to focus"
         case .onBreak: return "Side Eye, on break"
         case .working:
+            if model.outOfCredit { return "Side Eye, not judging: out of OpenRouter credits" }
             if model.showsOffTask { return "Side Eye, off task" }
             if model.excluded { return "Side Eye, not judged" }
             if model.judgment == .on { return "Side Eye, on task" }

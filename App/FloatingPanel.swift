@@ -399,6 +399,9 @@ struct FloatingStatusView: View {
                 .onSubmit { model.start(task: model.taskDraft) }
             if model.needsSetup {
                 GlassButton("Set Up", symbol: "checklist", prominent: true) { WelcomeOpener.open() }
+            } else if model.outOfCredit {
+                GlassButton("Add Credits", symbol: "creditcard", prominent: true) { NSWorkspace.shared.open(Credit.addCreditPage) }
+                    .help("Your OpenRouter account is out of credits. Side Eye notices once they're added.")
             } else {
                 GlassButton("Start", symbol: "play.fill", prominent: true) { model.start(task: model.taskDraft) }
                     .disabled(model.taskDraft.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -419,6 +422,7 @@ struct FloatingStatusView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .transaction { $0.animation = nil }
+                        .help(model.judgeFailed ? model.lastError ?? "" : "")
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 0) {
@@ -428,9 +432,13 @@ struct FloatingStatusView: View {
                     PomoCount(count: model.pomosToday).font(.system(size: 11))
                 }
             }
-            if hovering || offTask {
+            if hovering || offTask || model.outOfCredit {
                 HStack(spacing: 8) {
-                    if offTask {
+                    if model.outOfCredit {
+                        GlassButton("Add Credits", symbol: "creditcard", prominent: true) {
+                            NSWorkspace.shared.open(Credit.addCreditPage)
+                        }
+                    } else if offTask {
                         GlassButton("I'm on task!", symbol: "checkmark") { model.markCurrentOnTask() }
                     } else if model.probablyOnTask {
                         GlassButton("Yes, on task", symbol: "checkmark") {
@@ -519,7 +527,7 @@ struct FloatingStatusView: View {
     /// A window switch shows at once: new title, spinning dotted circle. Nothing animates here.
     private var statusIcon: some View {
         Group {
-            if model.evaluating, !model.excluded {
+            if model.evaluating, !model.excluded, !model.outOfCredit {
                 Image(systemName: "circle.dotted")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -537,7 +545,9 @@ struct FloatingStatusView: View {
     }
 
     private var statusSymbol: String {
+        if model.outOfCredit { return "creditcard.trianglebadge.exclamationmark" }
         if model.excluded { return "eye.slash.fill" }
+        if model.judgeFailed { return "exclamationmark.triangle.fill" }
         switch model.judgment {
         case .on: return "checkmark.circle.fill"
         case .off: return "exclamationmark.circle.fill"
@@ -547,6 +557,7 @@ struct FloatingStatusView: View {
     }
 
     private var statusColor: Color {
+        if model.outOfCredit || model.judgeFailed { return .orange }
         if model.excluded { return .secondary }
         switch model.judgment {
         case .on: return .green
@@ -557,8 +568,10 @@ struct FloatingStatusView: View {
     }
 
     private var statusText: String {
+        if model.outOfCredit { return "Out of OpenRouter credits · not judging" }
         guard let snap = model.current else { return "Watching…" }
         if model.excluded { return "\(snap.shortLabel) · not judged" }
+        if model.judgeFailed { return "\(snap.shortLabel) · couldn't judge" }
         return snap.statusLabel
     }
 }

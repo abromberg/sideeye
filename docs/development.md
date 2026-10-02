@@ -28,7 +28,7 @@ CODE_SIGN_IDENTITY = <certificate name or SHA-1>
 **Trying the UI without a session.** Demo mode shows each state with made-up data and never touches your settings or log:
 
 ```sh
-open -a "Side Eye" --args --demo=on        # also idle, unsure, off, break, or cycle to step through them all
+open -a "Side Eye" --args --demo=on        # also idle, unsure, off, break, credit, credit-idle, error, or cycle
 open -a "Side Eye" --args --demo=off -panelStyle compact -demoTitle "Some window"
 open -a "Side Eye" --args --show-welcome   # or --show-settings, --show-menu-preview
 ```

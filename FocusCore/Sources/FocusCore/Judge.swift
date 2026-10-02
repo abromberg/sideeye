@@ -28,7 +28,7 @@ public enum OpenRouterError: Error, LocalizedError, Equatable {
         switch self {
         case .missingKey: "No OpenRouter API key set."
         case .http(401, _): "OpenRouter rejected the API key (401)."
-        case .http(402, _): "OpenRouter account is out of credit (402)."
+        case .http(402, _): "OpenRouter account is out of credits (402)."
         case .http(429, _): "OpenRouter rate limited the request (429)."
         case let .http(code, body): "OpenRouter HTTP \(code): \(body.prefix(200))"
         case let .badResponse(why): "Unexpected OpenRouter response: \(why)"

@@ -38,6 +38,9 @@ final class AppModel {
     @ObservationIgnored private var briefOnTaskText: [String: String] = [:]
     @ObservationIgnored private var lastOnTaskRead = Date.distantPast
     @ObservationIgnored private var lastTextRewrite = Date.distantPast
+    @ObservationIgnored private var lastCreditCheck = Date.distantPast
+    /// Demo mode: fake state, so nothing checks OpenRouter.
+    @ObservationIgnored private var isDemo = false
 
     private(set) var phase: Phase = .idle
     /// The task field's text, shared by the floating window and the menu bar so editing either updates both.
@@ -59,6 +62,9 @@ final class AppModel {
     private(set) var axTrusted = AX.isTrusted()
     private(set) var screenRecording = ScreenReader.hasPermission
     private(set) var hasAPIKey = Keychain.openRouterKey() != nil
+    /// OpenRouter has no credit left (a 402, or the balance check). Nothing is judged until it's back; while it's out,
+    /// the balance is checked every `creditRecheck` so judging picks up again on its own.
+    private(set) var outOfCredit = false
     private(set) var pomosToday = 0
     /// Until then, off-task verdicts aren't shown (Settings → grace period), so you can get to your work first.
     private(set) var graceEndsAt: Date?
@@ -80,6 +86,7 @@ final class AppModel {
             runTextProbe(into: URL(fileURLWithPath: String(probe.dropFirst(13))))
         }
         watcher.onSnapshot = { [weak self] snap, trigger in self?.evaluate(snap, trigger: trigger) }
+        checkCredit()
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -102,9 +109,11 @@ final class AppModel {
         guard phase == .working, judgment == .off, let end = graceEndsAt, now < end, settings.gracePeriod > 0 else { return nil }
         return min(1, max(0, end.timeIntervalSince(now) / settings.gracePeriod))
     }
-    var canStart: Bool { axTrusted && hasAPIKey }
+    var canStart: Bool { !needsSetup && !outOfCredit }
     /// The welcome window's required steps. Until both are done, Start is disabled.
-    var needsSetup: Bool { !canStart }
+    var needsSetup: Bool { !(axTrusted && hasAPIKey) }
+    /// The window in front went unjudged because the call failed (not for lack of credit, which shows on its own).
+    var judgeFailed: Bool { phase == .working && !outOfCredit && !excluded && !evaluating && verdict == nil && lastError != nil }
 
     var countdown: String? {
         let end: Date? = switch phase {
@@ -252,6 +261,11 @@ final class AppModel {
         }
         excluded = false
         if settings.debugLogging { logDebugText(for: snap) }
+        guard !outOfCredit else {
+            verdict = nil
+            evaluating = false
+            return
+        }
 
         let key = snap.cacheKey
         let known = exceptionKeys.contains(key)
@@ -311,6 +325,8 @@ final class AppModel {
                 self.apply(v, to: snap, log: false)
             } catch is CancellationError {
             } catch let error as URLError where error.code == .cancelled {
+            } catch OpenRouterError.http(402, _) {
+                self?.setOutOfCredit(true)
             } catch {
                 guard let self, self.current?.cacheKey == key else { return }
                 self.lastError = error.localizedDescription
@@ -457,10 +473,42 @@ final class AppModel {
     }
 
     func refreshPermissions() {
-        axTrusted = AX.isTrusted()
+        axTrusted = isDemo || AX.isTrusted()
         screenRecording = ScreenReader.hasPermission
         hasAPIKey = Keychain.openRouterKey() != nil
         refreshPomoCount()
+        if Date().timeIntervalSince(lastCreditCheck) >= Self.creditRecheck { checkCredit() }
+    }
+
+    // MARK: Credit
+
+    private static let creditRecheck: TimeInterval = 30
+
+    /// Asks OpenRouter what's left (free), and sets `outOfCredit` from it. An unanswered check changes nothing.
+    func checkCredit() {
+        guard !isDemo, hasAPIKey else { return }
+        lastCreditCheck = Date()
+        Task { [weak self] in
+            guard let left = await Credit.remaining(apiKey: Keychain.openRouterKey()) else { return }
+            self?.setOutOfCredit(left <= 0)
+        }
+    }
+
+    /// Out: stops judging and drops the verdict, which no longer says anything. Back: rewrites the brief (it failed
+    /// too) and judges the window in front.
+    private func setOutOfCredit(_ out: Bool) {
+        guard out != outOfCredit else { return }
+        outOfCredit = out
+        lastCreditCheck = Date()
+        if out {
+            evalTask?.cancel()
+            evaluating = false
+            verdict = nil
+            lastError = nil
+        } else if phase == .working {
+            writeBrief()
+            if let snap = current, !excluded { judge(snap, useCache: true) }
+        }
     }
 
     func refreshPomoCount() {
@@ -495,8 +543,11 @@ final class AppModel {
     /// A tiny real Jev call, to check the key and connection from Settings.
     func testConnection() async -> String {
         do {
-            return try await checkKey(nil)
+            let result = try await checkKey(nil)
+            setOutOfCredit(false)
+            return result
         } catch {
+            if case OpenRouterError.http(402, _) = error { setOutOfCredit(true) }
             return error.localizedDescription
         }
     }
@@ -576,10 +627,12 @@ final class AppModel {
         }
     }
 
-    /// Design preview only (`--demo=idle|on|unsure|off|grace|break|cycle`, `-demoTitle "…"` for the window title):
+    /// Design preview only (`--demo=idle|on|unsure|off|grace|break|credit|credit-idle|error|cycle`, `-demoTitle "…"` for the window title):
     /// fake state, no watcher, no API calls.
     /// `cycle` steps through the states every 3 s to check the panel's resizing.
     private func showDemo(_ state: String) {
+        isDemo = true
+        axTrusted = true  // shown as set up, so the setup card doesn't cover the state being previewed
         if state == "cycle" {
             for (i, next) in ["idle", "on", "unsure", "off", "break", "idle"].enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(3 * i)) { [weak self] in
@@ -591,7 +644,9 @@ final class AppModel {
         task = "Draft the lease memo"
         pomosToday = 3
         graceEndsAt = nil
-        if state == "idle" {
+        outOfCredit = state.hasPrefix("credit")
+        lastError = state == "error" ? "The request timed out." : nil
+        if state == "idle" || state == "credit-idle" {
             phase = .idle
             return
         }
@@ -607,6 +662,10 @@ final class AppModel {
                                   windowTitle: UserDefaults.standard.string(forKey: "demoTitle") ?? (off ? "Home / X" : "Lease example"),
                                   url: off ? "https://x.com/home" : nil)
         let unsure = state == "unsure"
+        guard !outOfCredit, state != "error" else {
+            verdict = nil
+            return
+        }
         verdict = Verdict(onTask: off ? 0.04 : unsure ? 0.48 : 0.73, category: nil, stage: .metadata,
                           judgment: off ? .off : unsure ? .unsure : .on)
     }
@@ -623,6 +682,7 @@ final class AppModel {
         if newDay { refreshPomoCount() }
         if !axTrusted { axTrusted = AX.isTrusted() }
         if !screenRecording { screenRecording = ScreenReader.hasPermission }
+        if outOfCredit, t.timeIntervalSince(lastCreditCheck) >= Self.creditRecheck { checkCredit() }
 
         switch phase {
         case .idle:

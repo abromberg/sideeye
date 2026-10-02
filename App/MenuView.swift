@@ -12,7 +12,7 @@ struct MenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if model.needsSetup { setupCard }
+            if model.needsSetup { setupCard } else if model.outOfCredit { creditCard }
             Group {
                 switch model.phase {
                 case .idle: idleCard
@@ -79,6 +79,28 @@ struct MenuView: View {
             }
         }
         .padding(12)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var creditCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Out of OpenRouter credits", systemImage: "creditcard.trianglebadge.exclamationmark")
+                .font(.headline)
+            Text(model.isWorking
+                 ? "Add credits to start judging windows again."
+                 : "Add credits to start a session. Side Eye notices on its own once they're there.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button("Add Credits…") { NSWorkspace.shared.open(Credit.addCreditPage) }
+                    .buttonStyle(.borderedProminent)
+                Button("Check Again") { model.checkCredit() }
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
@@ -254,13 +276,16 @@ struct MenuView: View {
     // MARK: Status
 
     private var statusSymbol: String {
+        if model.outOfCredit { return "pause.circle.fill" }
         if model.excluded { return "eye.slash.fill" }
+        if model.judgeFailed { return "exclamationmark.triangle.fill" }
         if model.showsOffTask { return "exclamationmark.circle.fill" }
         if model.probablyOnTask { return "checkmark.circle" }
         return model.judgment == .on ? "checkmark.circle.fill" : "circle.dotted"
     }
 
     private var statusColor: Color {
+        if model.outOfCredit || model.judgeFailed { return .orange }
         if model.excluded { return .secondary }
         if model.showsOffTask { return .red }
         if model.probablyOnTask { return .yellow }
@@ -268,6 +293,7 @@ struct MenuView: View {
     }
 
     private var statusTitle: String {
+        if model.outOfCredit { return "Not judging · out of credits" }
         guard let snap = model.current else { return "Watching…" }
         // Just where you are; the window's title is on the line below.
         if model.excluded { return "\(snap.shortLabel) · not looked at" }

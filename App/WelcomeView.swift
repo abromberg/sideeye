@@ -150,7 +150,7 @@ struct WelcomeView: View {
                 keyError = "OpenRouter didn't accept that key. Check that it's copied in full."
                 return
             } catch OpenRouterError.http(402, _) {
-                keyNote = "Saved, but your OpenRouter account is out of credit. Add some at openrouter.ai/settings/credits."
+                keyNote = "Saved, but your OpenRouter account is out of credits. Add some at openrouter.ai/settings/credits."
             } catch {
                 keyNote = "Saved, but Side Eye couldn't reach OpenRouter to check it: \(error.localizedDescription)"
             }
