@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build a Developer ID–signed, notarized Side Eye and its Sparkle appcast, in build/release/dist/.
+# Build a Developer ID–signed, notarized Side Eye, its installer disk image and its Sparkle appcast, in build/release/dist/.
 # Needs, once: a "Developer ID Application" certificate in the keychain, the Sparkle signing key (Sparkle's
 # generate_keys) in the keychain, and a notarytool profile:
 #   xcrun notarytool store-credentials side-eye --apple-id <email> --team-id <team ID>
@@ -20,6 +20,16 @@ xcodebuild -project SideEye.xcodeproj -scheme SideEye -configuration Release \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$DEVELOPER_ID" DEVELOPMENT_TEAM="$TEAM_ID" OTHER_CODE_SIGN_FLAGS=--timestamp \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
 APP="$OUT/Build/Products/Release/Side Eye.app"
+# notarytool exits 0 even when Apple rejects the build, so check the verdict.
+notarize() {
+  NOTARY=$(xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait)
+  echo "$NOTARY"
+  if ! echo "$NOTARY" | grep -q "status: Accepted"; then
+    ID=$(echo "$NOTARY" | sed -n 's/^ *id: //p' | head -1)
+    echo "Notarization failed. Apple's reasons: xcrun notarytool log $ID --keychain-profile $NOTARY_PROFILE" >&2
+    exit 1
+  fi
+}
 
 # Xcode leaves Sparkle's helpers ad-hoc signed. Notarization needs every piece signed with the Developer ID,
 # innermost first, and then the app again.
@@ -41,14 +51,7 @@ mkdir -p "$DIST"
 # A fixed name, so releases/latest/download/Side-Eye.zip always gets the newest version.
 ZIP="$DIST/Side-Eye.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
-# notarytool exits 0 even when Apple rejects the build, so check the verdict.
-NOTARY=$(xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait)
-echo "$NOTARY"
-if ! echo "$NOTARY" | grep -q "status: Accepted"; then
-  ID=$(echo "$NOTARY" | sed -n 's/^ *id: //p' | head -1)
-  echo "Notarization failed. Apple's reasons: xcrun notarytool log $ID --keychain-profile $NOTARY_PROFILE" >&2
-  exit 1
-fi
+notarize "$ZIP"
 xcrun stapler staple "$APP"
 # Re-zip so the download carries the stapled ticket and opens offline.
 rm "$ZIP"
@@ -58,7 +61,15 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 TAG="v$VERSION"
 "$OUT/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" \
   --download-url-prefix "${FEED%/latest/download/appcast.xml}/download/$TAG/" "$DIST"
+
+# The disk image is for people installing for the first time; updates keep using the zip. It's made after the
+# appcast, so the appcast doesn't list it, and it carries the already-stapled app.
+DMG="$DIST/Side-Eye.dmg"
+scripts/make-dmg.sh "$APP" "$DMG"
+codesign --timestamp --sign "$DEVELOPER_ID" "$DMG"
+notarize "$DMG"
+xcrun stapler staple "$DMG"
 echo
 echo "Ready in $DIST. To publish:"
-echo "  gh release create $TAG \"$ZIP\" \"$DIST/appcast.xml\" --title \"Side Eye $VERSION\" --generate-notes \\"
-echo "    --notes \"**To install:** download \\\`Side-Eye.zip\\\` below, unzip it and drag Side Eye into Applications. Requires macOS 26. (\\\`appcast.xml\\\` is for automatic updates; you don't need it.)\""
+echo "  gh release create $TAG \"$DMG\" \"$ZIP\" \"$DIST/appcast.xml\" --title \"Side Eye $VERSION\" --generate-notes \\"
+echo "    --notes \"**To install:** download \\\`Side-Eye.dmg\\\` below, open it and drag Side Eye into Applications. Requires macOS 26. (\\\`Side-Eye.zip\\\` and \\\`appcast.xml\\\` are for automatic updates; you don't need them.)\""

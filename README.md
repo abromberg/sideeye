@@ -7,7 +7,7 @@
 <p align="center">A pomodoro focus timer for your Mac that notices when you drift.</p>
 
 <p align="center">
-  <a href="https://github.com/abromberg/sideeye/releases/latest/download/Side-Eye.zip"><b>Download Side Eye for Mac</b></a><br>
+  <a href="https://github.com/abromberg/sideeye/releases/latest/download/Side-Eye.dmg"><b>Download Side Eye for Mac</b></a><br>
   <sub>macOS 26 or later · <a href="#install">How to install</a></sub>
 </p>
 
@@ -30,8 +30,8 @@ It doesn't block anything. It just gives you a look.
 
 ## Install
 
-1. [Download Side Eye](https://github.com/abromberg/sideeye/releases/latest/download/Side-Eye.zip). (On the [Releases](https://github.com/abromberg/sideeye/releases) page, it's `Side-Eye.zip`. You don't need `appcast.xml` or the source code.)
-2. Unzip it if your browser didn't already, and drag **Side Eye** into your Applications folder.
+1. [Download Side Eye](https://github.com/abromberg/sideeye/releases/latest/download/Side-Eye.dmg). (On the [Releases](https://github.com/abromberg/sideeye/releases) page, it's `Side-Eye.dmg`. You don't need the other files.)
+2. Open it, and in the window that appears, drag **Side Eye** onto the Applications folder.
 3. Open it. A welcome window walks you through three things:
    - **Accessibility**, so Side Eye can see which app and window are in front.
    - **Screen Recording**, for windows that don't expose their text, like PDFs. Side Eye works without it, just with less to go on.

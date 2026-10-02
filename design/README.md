@@ -3,6 +3,7 @@
 - `app-icon.png`: the app icon source, a transparent 1254 × 1254 PNG.
 - `menu-bar-icon.svg`: the menu bar template icon, hand-authored on an 18-point grid with `currentColor` fills and a transparent eye cutout.
 - `blink/`, `blink-preview.html`: the six blink frames and a playback preview, exported by `python3 scripts/generate-icons.py`.
+- `dmg-background.svg`: the installer window's background. `generate-icons.py` exports it as `dmg-background.tiff` (1× and 2×), which `scripts/make-dmg.sh` uses. The arrow lines up with icon positions set in that script.
 - `animations-review.html`: the four state animations, with playback, slow motion and scrubbing.
 
 ## Motion

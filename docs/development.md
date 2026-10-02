@@ -117,7 +117,7 @@ For each release:
    ```sh
    DEVELOPER_ID="Developer ID Application: Experimental LLC (<team ID>)" scripts/release.sh
    ```
-   `Side-Eye.zip` and `appcast.xml` end up in `build/release/dist/`. The zip keeps the same name every release so the README's download link (`releases/latest/download/Side-Eye.zip`) always points at the newest version.
+   `Side-Eye.dmg`, `Side-Eye.zip` and `appcast.xml` end up in `build/release/dist/`. The disk image is what people download; it opens to a window where they drag Side Eye into Applications. The zip is what Sparkle installs updates from. Both keep the same names every release, so the README's download link (`releases/latest/download/Side-Eye.dmg`) always points at the newest version. Finder lays out the disk image's window, so the first release from a Mac asks to let Terminal control Finder.
 3. Publish with the `gh release create` command the script prints.
 
 ## Tuning with focuseval
