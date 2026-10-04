@@ -66,6 +66,8 @@ final class AppModel {
     /// the balance is checked every `creditRecheck` so judging picks up again on its own.
     private(set) var outOfCredit = false
     private(set) var pomosToday = 0
+    /// When the last pomodoro ran out. The floating window marks it until you've noticed; see `justFinished`.
+    private(set) var finishedBlockAt: Date?
     /// Until then, off-task verdicts aren't shown (Settings → grace period), so you can get to your work first.
     private(set) var graceEndsAt: Date?
 
@@ -108,6 +110,12 @@ final class AppModel {
     var graceRemaining: Double? {
         guard phase == .working, judgment == .off, let end = graceEndsAt, now < end, settings.gracePeriod > 0 else { return nil }
         return min(1, max(0, end.timeIntervalSince(now) / settings.gracePeriod))
+    }
+    /// A pomodoro just ran out and you haven't looked yet: the floating window turns green and opens on its own.
+    /// Hovering it counts as looking; otherwise it settles into the break after `finishHold`.
+    var justFinished: Bool {
+        guard case .onBreak = phase, let at = finishedBlockAt else { return false }
+        return now.timeIntervalSince(at) < Self.finishHold
     }
     var canStart: Bool { !needsSetup && !outOfCredit }
     /// The welcome window's required steps. Until both are done, Start is disabled.
@@ -235,6 +243,13 @@ final class AppModel {
     func goForWalk() {
         if let sessionID { try? store?.logAction(session: sessionID, event: currentEventID, action: "walk", cacheKey: current?.cacheKey) }
         endBlock(reason: "walk")
+    }
+
+    /// The pulses take about 5 s; the green holds a little past them, then gives way to the break.
+    private static let finishHold: TimeInterval = 10
+
+    func noticeFinish() {
+        finishedBlockAt = nil
     }
 
     func skipTimer() {
@@ -627,14 +642,14 @@ final class AppModel {
         }
     }
 
-    /// Design preview only (`--demo=idle|on|unsure|off|grace|break|credit|credit-idle|error|cycle`, `-demoTitle "…"` for the window title):
+    /// Design preview only (`--demo=idle|on|unsure|off|grace|done|break|credit|credit-idle|error|cycle`, `-demoTitle "…"` for the window title):
     /// fake state, no watcher, no API calls.
     /// `cycle` steps through the states every 3 s to check the panel's resizing.
     private func showDemo(_ state: String) {
         isDemo = true
         axTrusted = true  // shown as set up, so the setup card doesn't cover the state being previewed
         if state == "cycle" {
-            for (i, next) in ["idle", "on", "unsure", "off", "break", "idle"].enumerated() {
+            for (i, next) in ["idle", "on", "unsure", "off", "done", "break", "idle"].enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(3 * i)) { [weak self] in
                     MainActor.assumeIsolated { self?.showDemo(next) }
                 }
@@ -650,8 +665,9 @@ final class AppModel {
             phase = .idle
             return
         }
-        if state == "break" {
-            phase = .onBreak(until: Date().addingTimeInterval(4 * 60 + 12))
+        if state == "break" || state == "done" {
+            phase = .onBreak(until: Date().addingTimeInterval(state == "done" ? 5 * 60 : 4 * 60 + 12))
+            finishedBlockAt = state == "done" ? Date() : nil
             return
         }
         phase = .working
@@ -710,6 +726,7 @@ final class AppModel {
         }
         if let blockEndsAt, t >= blockEndsAt {
             endBlock(reason: "completed", next: .onBreak(until: t.addingTimeInterval(TimeInterval(settings.breakMinutes * 60))))
+            finishedBlockAt = t
             refreshPomoCount()
         }
     }

@@ -242,6 +242,10 @@ struct FloatingStatusView: View {
     let onGlassSizeChange: (CGSize) -> Void
     private var hovering: Bool { hover.isHovering }
     @State private var fullSize = CGSize(width: fullWidth, height: 50)
+    /// The halo that pulses around the glass when a pomodoro finishes, 0 to 1.
+    @State private var glow = 0.0
+    /// Counts those pulses; the check mark bounces with each one.
+    @State private var pulses = 0
     @FocusState private var taskFocused: Bool
     /// Editing the task mid-block to move on to another one.
     @State private var switchingTask = false
@@ -252,13 +256,19 @@ struct FloatingStatusView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var offTask: Bool { model.showsOffTask }
-    /// Compact shows just the icon until you click it, and opens on its own when you drift.
-    private var collapsed: Bool { settings.panelStyle == .compact && !state.expanded && !offTask }
+    private var justFinished: Bool { model.justFinished }
+    /// Compact shows just the icon until you click it, and opens on its own when you drift or finish a pomodoro.
+    private var collapsed: Bool { settings.panelStyle == .compact && !state.expanded && !offTask && !justFinished }
     /// A clicked-open compact panel stays open while the mouse is over it or you're typing in it.
     private var staysOpen: Bool { hovering || taskFocused }
     private var glassSize: CGSize { collapsed ? Self.compactSize : fullSize }
     private var morph: Animation? { reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.12) }
-    private var tint: Color { offTask ? Color(nsColor: .systemRed).opacity(0.78) : .black.opacity(0.38) }
+    private var tint: Color {
+        if offTask { return Color(nsColor: .systemRed).opacity(0.78) }
+        if justFinished { return Self.done.opacity(0.78) }
+        return .black.opacity(0.38)
+    }
+    private static let done = Color(nsColor: .systemGreen)
 
     var body: some View {
         // Both layouts stay in place and cross-fade while the glass morphs between their sizes. Pinned to the leading
@@ -279,6 +289,10 @@ struct FloatingStatusView: View {
         .background(tint, in: Self.shape)
         .clipShape(Self.shape)
         .glassEffect(.clear, in: Self.shape)
+        // Bleeds a little past the edge, inside the window's margin; seen through the glass, it lights it up too.
+        .background { Self.shape.fill(Self.done).blur(radius: 9).opacity(glow) }
+        // Swells slightly with each pulse, within the margin.
+        .scaleEffect(1 + 0.03 * glow)
         .contextMenu { menu }
         .padding(FloatingPanel.margin)
         .frame(width: FloatingPanel.canvas.width, height: FloatingPanel.canvas.height,
@@ -294,6 +308,13 @@ struct FloatingStatusView: View {
             switchingTask = false
         }
         .onChange(of: settings.panelStyle) { state.expanded = false }
+        .onChange(of: hovering) { _, hovering in
+            // Looking at a finished pomodoro settles it into the break. Compact stays open while you're over it.
+            guard hovering, justFinished else { return }
+            if settings.panelStyle == .compact { state.expanded = true }
+            model.noticeFinish()
+        }
+        .task(id: model.finishedBlockAt) { await pulse() }
         .onChange(of: state.expanded) { _, expanded in
             // Clicked open to type a task: put the cursor in the field.
             if expanded, model.phase == .idle { DispatchQueue.main.async { taskFocused = true } }
@@ -308,6 +329,7 @@ struct FloatingStatusView: View {
         .animation(morph, value: collapsed)
         .animation(morph, value: hovering)
         .animation(.smooth(duration: 0.25), value: offTask)
+        .animation(.smooth(duration: 0.6), value: justFinished)
         .animation(.smooth(duration: 0.25), value: model.phase)
         .focusEffectDisabled()
         // The panel never becomes the active window; keep controls from drawing in their inactive (dimmed) state.
@@ -356,10 +378,7 @@ struct FloatingStatusView: View {
             switch model.phase {
             case .idle: idleEye
             case .working: statusIcon
-            case .onBreak:
-                Image(systemName: "cup.and.saucer.fill")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
+            case .onBreak: breakIcon(size: 15)
             }
         }
         .frame(width: 18, height: 18)
@@ -372,7 +391,7 @@ struct FloatingStatusView: View {
         switch model.phase {
         case .idle: "Click to start a session"
         case .working: "\(model.task) · \(statusText)"
-        case .onBreak: "Break"
+        case .onBreak: justFinished ? "Pomo done" : "Break"
         }
     }
 
@@ -459,15 +478,16 @@ struct FloatingStatusView: View {
         }
     }
 
+    /// Just after a pomodoro, the same layout says so; it settles into the break once you've seen it.
     private var onBreak: some View {
         HStack(spacing: 10) {
-            Image(systemName: "cup.and.saucer.fill")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(.secondary)
+            breakIcon(size: 17)
                 .frame(width: 18, height: 18)
                 .matchedGeometryEffect(id: "icon", in: icon, isSource: !collapsed)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Break").font(.system(size: 14, weight: .semibold))
+                Text(justFinished ? "Pomo done" : "Break")
+                    .font(.system(size: 14, weight: .semibold))
+                    .contentTransition(.opacity)
                 PomoCount(count: model.pomosToday).font(.system(size: 12))
             }
             Spacer(minLength: 8)
@@ -506,6 +526,34 @@ struct FloatingStatusView: View {
             .onTapGesture { beginSwitching() }
             .help("Switch to another task — the timer keeps running")
         }
+    }
+
+    @ViewBuilder private func breakIcon(size: CGFloat) -> some View {
+        if justFinished {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(.white)
+                .symbolEffect(.bounce, value: pulses)
+                .transition(.opacity)
+        } else {
+            Image(systemName: "cup.and.saucer.fill")
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+        }
+    }
+
+    /// Three slow pulses of light around the glass: motion the corner of your eye picks up, then quiet.
+    private func pulse() async {
+        guard model.finishedBlockAt != nil, !reduceMotion else { return }
+        for _ in 0..<3 where !Task.isCancelled {
+            pulses += 1
+            withAnimation(.easeOut(duration: 0.35)) { glow = 0.9 }
+            try? await Task.sleep(for: .seconds(0.35))
+            withAnimation(.easeInOut(duration: 1.1)) { glow = 0 }
+            try? await Task.sleep(for: .seconds(1.5))
+        }
+        withAnimation(.easeOut(duration: 0.3)) { glow = 0 }
     }
 
     private func beginSwitching() {
