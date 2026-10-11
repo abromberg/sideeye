@@ -1,0 +1,75 @@
+conventions: >
+  Commit subjects are plain imperative sentences without a type prefix (e.g.
+  "Write briefs with gpt-6-luna and ask it for names the judge can match"). Do
+  not edit the doc comment above BriefWriter (TaskBrief.swift ~55-77): it is the
+  record of a hand-run model bake-off, not a list of current IDs. If you change
+  the default, append a sentence saying what replaced it and on what evidence
+  instead of rewriting the old results.
+
+pins:
+  # Writes the four-line task brief (Related / Involves / Counts / Not this) at session Start; every Jev verdict in
+  # the session is judged against it. Chosen by bake-off over deepseek-flash, haiku and gemini-flash on accuracy
+  # and price (a twelfth of gemini's), so cost per brief matters as much as quality.
+  # Gotchas:
+  #   - BriefWriter.reasoningEffort(model) returns "low" only when the model hasPrefix("google/gemini"), else
+  #     "none". The new luna must accept reasoning effort "none"; if it rejects requests without reasoning (as
+  #     Gemini 3.x Flash does), extend that prefix check or the brief call fails on every Start.
+  #   - Request sets provider {zdr: true} (provider routing, not a param): the new model needs at least one
+  #     zero-data-retention provider on OpenRouter or every call fails.
+  - name: task-brief
+    role: task brief writer (feeds the on-task judge)
+    lane: openai-luna
+    format: openrouter
+    current: openai/gpt-6-luna
+    locations:
+      - file: FocusCore/Sources/FocusCore/TaskBrief.swift
+        match: 'defaultModel = "openai/gpt-6-luna"'
+    params: [ max_tokens, reasoning ]
+    policy: eval
+    eval:
+      command: >
+        cd FocusCore && BRIEF_MODEL=<old> swift run focuseval debugeval >
+        /tmp/debugeval-old.txt && BRIEF_MODEL=<new> swift run focuseval
+        debugeval > /tmp/debugeval-new.txt
+      why: >
+        Rewrites each debug-mode session's brief from its last logged brief
+        input with BRIEF_MODEL, then has Jev re-judge every logged window with
+        that brief. Compare the "+ session brief, rewritten" row old vs new:
+        confirmed-on windows should stay on and other projects' windows should
+        stay off (the same counts the 2026-10-01 bake-off used), and skim the
+        rewritten briefs. Needs the private local log (~/Library/Application
+        Support/Side Eye/focus.sqlite, debug-mode sessions since 2026-09-30),
+        macOS 26 and OPENROUTER_API_KEY. Real calls, cost in cents (mostly Jev
+        at ~$0.00004/call; briefs ~$0.0003). Runs vary, so run each model twice
+        before judging.
+
+external:
+  - pin: task-brief
+    where: macOS app UserDefaults, key "briefModel" (Settings > Models > Task brief
+      text field)
+    action: >
+      Users who never edited the field follow the new default automatically
+      (register(defaults:) is not persisted). Anyone who edited it keeps the
+      saved string, even if it equals the old default. Add a migration in
+      App/Settings.swift init: if d.string(forKey: "briefModel") is a retired
+      default (keep a list, starting with "openai/gpt-6-luna"), call
+      d.removeObject(forKey: "briefModel"). Otherwise those users stay on the
+      old model until it is retired, then every brief fails.
+
+companions:
+  - file: FocusCore/Tests/FocusCoreTests/FocusCoreTests.swift
+    why: >
+      Hard-codes "jev-latest" (~:105) and "~deepseek/deepseek-flash-latest"
+      (~:134) in request-body tests. No test asserts the brief model today, so a
+      task-brief bump changes nothing here; update these only if a PR changes
+      the judge or describer defaults. Run `swift test` in FocusCore on a Mac
+      either way.
+
+ignore:
+  - FocusCore/Sources/FocusCore/Describer.swift # floating alias, already tracks the deepseek-flash lane
+  - FocusCore/Sources/FocusCore/Judge.swift # jev-latest, custom endpoint, no lane
+  - FocusCore/Sources/focuseval/ # reads BriefWriter.defaultModel / env vars; jev-latest fallback
+  - App/Settings.swift # duplicates the jev/describer literals only
+  - docs/
+  - README.md
+  - design/
