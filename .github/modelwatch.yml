@@ -1,38 +1,8 @@
-conventions: >
-  Don't rewrite the bake-off notes above BriefWriter in TaskBrief.swift. If the default changes, append one
-  sentence saying what replaced it and why.
-
-pins:
-  # Gotchas: BriefWriter.reasoningEffort sends reasoning "none" to non-Gemini models, so the new model must accept
-  # it (or extend that prefix check). Requests require a ZDR provider on OpenRouter.
-  - name: task-brief
-    role: task brief writer (feeds the on-task judge)
-    lane: openai-luna
-    format: openrouter
-    current: openai/gpt-6-luna
-    locations:
-      - file: FocusCore/Sources/FocusCore/TaskBrief.swift
-        match: 'defaultModel = "openai/gpt-6-luna"'
-    params: [max_tokens, reasoning]
-    policy: eval
-    eval:
-      command: >
-        cd FocusCore && BRIEF_MODEL=<old> swift run focuseval debugeval > /tmp/old.txt &&
-        BRIEF_MODEL=<new> swift run focuseval debugeval > /tmp/new.txt
-      why: >
-        Compare the "+ session brief, rewritten" rows: on-task windows should stay on and others off. Needs the
-        local Side Eye log on a Mac; run each model twice.
-
-external:
-  - pin: task-brief
-    where: macOS app settings, "briefModel"
-    action: Users who edited this field keep <old>; add a migration in App/Settings.swift that clears it.
-
-ignore:
-  - FocusCore/Sources/FocusCore/Describer.swift
-  - FocusCore/Sources/FocusCore/Judge.swift
-  - FocusCore/Sources/focuseval/
-  - App/Settings.swift
-  - docs/
-  - README.md
-  - design/
+models:
+  - id: openai/gpt-6-luna
+    eval: cd FocusCore && swift run focuseval debugeval with BRIEF_MODEL=<old>, then <new>; compare the rewritten-brief rows
+notes: >
+  BriefWriter.reasoningEffort sends reasoning "none" to non-Gemini models, so the new model must accept it. Don't
+  rewrite the bake-off notes above BriefWriter; append a line saying what replaced the default.
+after_merge:
+  - Users who edited the task brief model in Settings keep <old>; add a migration in App/Settings.swift if it's retiring.
