@@ -1,0 +1,8 @@
+models:
+  - id: openai/gpt-6-luna
+    eval: cd FocusCore && swift run focuseval debugeval with BRIEF_MODEL=<old>, then <new>; compare the rewritten-brief rows
+notes: >
+  BriefWriter.reasoningEffort sends reasoning "none" to non-Gemini models, so the new model must accept it. Don't
+  rewrite the bake-off notes above BriefWriter; append a line saying what replaced the default.
+after_merge:
+  - Users who edited the task brief model in Settings keep <old>; add a migration in App/Settings.swift if it's retiring.
