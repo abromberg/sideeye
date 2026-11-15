@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Really hardcore mode: reopens Side Eye if it isn't running (after a force quit, a kill, or a restart).
+  Side Eye registers this agent when really hardcore starts and removes it when it runs out. See App/Hardcore.swift.
+  It reopens the copy that registered it (`keepAliveApp`), not just any app with the bundle ID: with an older copy
+  around, LaunchServices may pick that one, and it knows nothing about hardcore mode.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>energy.experimental.sideeye.keepalive</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>/usr/bin/pgrep -xq "Side Eye" &amp;&amp; exit 0; APP=$(/usr/bin/defaults read energy.experimental.sideeye keepAliveApp 2&gt;/dev/null); if [ -d "$APP" ]; then exec /usr/bin/open -g "$APP"; else exec /usr/bin/open -g -b energy.experimental.sideeye; fi</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>10</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

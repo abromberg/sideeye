@@ -18,7 +18,14 @@ targets:
   SideEye:
     type: application
     platform: macOS
-    sources: [App]
+    sources:
+      - App
+      # Really hardcore's keep-alive agent. SMAppService looks for agents in Contents/Library/LaunchAgents.
+      - path: LaunchAgents/energy.experimental.sideeye.keepalive.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     dependencies:
       - package: FocusCore
       - package: Sparkle

@@ -49,6 +49,15 @@ Type what you're working on, like "Draft the lease memo", and press **Start**. B
 
 Sessions are 25-minute pomodoros with 5-minute breaks. You can change the lengths, how strict Side Eye is, and whether the floating window shows everything or just the eye, in Settings.
 
+### Hardcore mode
+
+If you need more than a look, choose **Go Hardcore…** in the menu and pick how long: a few hours, the rest of today, a number of hours you type, or until you turn it off. While it's on, whenever no pomodoro or break is running, Side Eye covers every screen until you start one. Type what you're working on and press **Start** to get your Mac back.
+
+- **Hardcore** can be turned off from the cover or the menu whenever you like.
+- **Really Hardcore** can't. It has no off switch, Side Eye can't be quit, and if it's closed anyway it reopens within seconds, even after a restart. It ends when its time runs out, so it always needs an end time (at most 24 hours when you type one). macOS may ask you to allow Side Eye in Login Items so it can reopen itself.
+
+Breaks are free time: the cover only comes back when the break ends. Logging out, restarting and shutting down always work.
+
 ## Privacy
 
 To work, Side Eye has to look at what's on your screen. Here is what it sends, and when. Everything goes through OpenRouter, and only to providers that don't keep your data.

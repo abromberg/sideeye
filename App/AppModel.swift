@@ -16,6 +16,7 @@ final class AppModel {
     @ObservationIgnored private let watcher = ContextWatcher()
     @ObservationIgnored private let screenReader = ScreenReader()
     @ObservationIgnored private let floatingPanel = FloatingPanelController()
+    @ObservationIgnored private let cover = HardcoreCoverController()
     @ObservationIgnored private var store: Store?
     @ObservationIgnored private var ticker: Timer?
     @ObservationIgnored private var evalTask: Task<Void, Never>?
@@ -70,6 +71,8 @@ final class AppModel {
     private(set) var finishedBlockAt: Date?
     /// Until then, off-task verdicts aren't shown (Settings → grace period), so you can get to your work first.
     private(set) var graceEndsAt: Date?
+    /// Hardcore mode, if it's on (or was, and hasn't been noticed running out yet). See `Hardcore.swift`.
+    private(set) var hardcore = HardcoreCommitment.load()
 
     init() {
         do {
@@ -81,6 +84,8 @@ final class AppModel {
         observePanelSetting()
         refreshPomoCount()
         if let demo = CommandLine.arguments.first(where: { $0.hasPrefix("--demo=") }) { showDemo(String(demo.dropFirst(7))) }
+        if !isDemo { KeepAlive.set(reallyHardcore) }
+        observeHardcore()
         if let probe = CommandLine.arguments.first(where: { $0.hasPrefix("--probe-screenshot=") }) {
             runScreenshotProbe(into: URL(fileURLWithPath: String(probe.dropFirst(19))))
         }
@@ -132,6 +137,63 @@ final class AppModel {
         guard let end else { return nil }
         let s = max(0, Int(end.timeIntervalSince(now).rounded()))
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    // MARK: Hardcore
+
+    var hardcoreActive: Bool { hardcore?.isActive(at: now) ?? false }
+    var reallyHardcore: Bool { hardcoreActive && hardcore?.level == .really }
+    /// No pomodoro or break running while hardcore is on. Not while Side Eye can't start one (setup isn't finished,
+    /// or OpenRouter is out of credit): the cover would have no way out.
+    var coverShown: Bool { hardcoreActive && phase == .idle && canStart }
+
+    /// "1h 23m left, until 5:40 PM", or "Until you turn it off".
+    var hardcoreRemaining: String {
+        guard let hardcore, hardcoreActive else { return "" }
+        guard let until = hardcore.until else { return "Until you turn it off" }
+        let left = Int(until.timeIntervalSince(now))
+        let remaining = left >= 3600 ? "\(left / 3600)h \(left % 3600 / 60)m" : "\(max(1, (left + 59) / 60)) min"
+        return "\(remaining) left, until \(HardcoreCommitment.endText(until, now: now))"
+    }
+
+    /// "Really hardcore · 1h 23m left, until 5:40 PM".
+    var hardcoreStatus: String {
+        guard let hardcore, hardcoreActive else { return "" }
+        return "\(hardcore.level == .really ? "Really hardcore" : "Hardcore") · \(hardcoreRemaining)"
+    }
+
+    /// `until` nil means until you turn it off, which only regular hardcore allows.
+    func goHardcore(_ level: HardcoreLevel, until: Date?) {
+        guard level == .hardcore || until != nil, !reallyHardcore else { return }
+        hardcore = HardcoreCommitment(level: level, until: until)
+        if !isDemo {
+            HardcoreCommitment.save(hardcore)
+            KeepAlive.set(level == .really)
+        }
+    }
+
+    func turnOffHardcore() {
+        guard hardcore?.canTurnOff ?? true else { return }
+        endHardcore()
+    }
+
+    private func endHardcore() {
+        hardcore = nil
+        if !isDemo {
+            HardcoreCommitment.save(nil)
+            KeepAlive.set(false)
+        }
+    }
+
+    private func observeHardcore() {
+        withObservationTracking {
+            let shown = coverShown
+            cover.setShown(shown, model: self)
+            // A demo's cover is only for looking at.
+            QuitGuard.blocking = !isDemo && (shown || reallyHardcore)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeHardcore() }
+        }
     }
 
     // MARK: Session lifecycle
@@ -642,7 +704,8 @@ final class AppModel {
         }
     }
 
-    /// Design preview only (`--demo=idle|on|unsure|off|grace|done|break|credit|credit-idle|error|cycle`, `-demoTitle "…"` for the window title):
+    /// Design preview only (`--demo=idle|on|unsure|off|grace|done|break|credit|credit-idle|error|hardcore|really|cycle`,
+    /// `-demoTitle "…"` for the window title):
     /// fake state, no watcher, no API calls.
     /// `cycle` steps through the states every 3 s to check the panel's resizing.
     private func showDemo(_ state: String) {
@@ -658,10 +721,13 @@ final class AppModel {
         }
         task = "Draft the lease memo"
         pomosToday = 3
+        // Never the saved commitment: demos mustn't cover the screen, or change it. `hardcore` and `really` show the cover.
+        hardcore = state == "hardcore" || state == "really"
+            ? HardcoreCommitment(level: state == "really" ? .really : .hardcore, until: Date().addingTimeInterval(97 * 60)) : nil
         graceEndsAt = nil
         outOfCredit = state.hasPrefix("credit")
         lastError = state == "error" ? "The request timed out." : nil
-        if state == "idle" || state == "credit-idle" {
+        if state == "idle" || state == "credit-idle" || hardcore != nil {
             phase = .idle
             return
         }
@@ -699,6 +765,8 @@ final class AppModel {
         if !axTrusted { axTrusted = AX.isTrusted() }
         if !screenRecording { screenRecording = ScreenReader.hasPermission }
         if outOfCredit, t.timeIntervalSince(lastCreditCheck) >= Self.creditRecheck { checkCredit() }
+        if hardcore != nil, !hardcoreActive { endHardcore() }
+        cover.reassert()
 
         switch phase {
         case .idle:

@@ -13,6 +13,10 @@ TEAM_ID="${TEAM_ID:-$(echo "$DEVELOPER_ID" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')
 NOTARY_PROFILE="${NOTARY_PROFILE:-side-eye}"
 OUT=build/release
 DIST="$OUT/dist"
+# This version's release notes, shown in the update window and on the GitHub release. Checked before the long build.
+NOTES_VERSION=$(sed -n 's/^ *MARKETING_VERSION: "\(.*\)"$/\1/p' project.yml)
+NOTES="release-notes/$NOTES_VERSION.md"
+[ -f "$NOTES" ] || { echo "Write the release notes for $NOTES_VERSION in $NOTES first." >&2; exit 1; }
 xcodegen generate --quiet
 rm -rf "$OUT"
 xcodebuild -project SideEye.xcodeproj -scheme SideEye -configuration Release \
@@ -58,9 +62,19 @@ rm "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 # The appcast lists this version, signed with the Sparkle key, downloading from the matching GitHub release.
+# generate_appcast picks up release notes named like the archive, and --embed-release-notes puts them in the appcast,
+# so the update window shows them.
 TAG="v$VERSION"
-"$OUT/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" \
+cp "release-notes/$VERSION.md" "$DIST/Side-Eye.md"
+"$OUT/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" --embed-release-notes \
   --download-url-prefix "${FEED%/latest/download/appcast.xml}/download/$TAG/" "$DIST"
+rm "$DIST/Side-Eye.md"
+# The GitHub release gets the same notes, under how to install.
+{
+  echo "**To install:** download \`Side-Eye.dmg\` below, open it and drag Side Eye into Applications. Requires macOS 26. (\`Side-Eye.zip\` and \`appcast.xml\` are for automatic updates; you don't need them.)"
+  echo
+  cat "release-notes/$VERSION.md"
+} > "$DIST/github-notes.md"
 
 # The disk image is for people installing for the first time; updates keep using the zip. It's made after the
 # appcast, so the appcast doesn't list it, and it carries the already-stapled app.
@@ -71,5 +85,5 @@ notarize "$DMG"
 xcrun stapler staple "$DMG"
 echo
 echo "Ready in $DIST. To publish:"
-echo "  gh release create $TAG \"$DMG\" \"$ZIP\" \"$DIST/appcast.xml\" --title \"Side Eye $VERSION\" --generate-notes \\"
-echo "    --notes \"**To install:** download \\\`Side-Eye.dmg\\\` below, open it and drag Side Eye into Applications. Requires macOS 26. (\\\`Side-Eye.zip\\\` and \\\`appcast.xml\\\` are for automatic updates; you don't need them.)\""
+echo "  gh release create $TAG \"$DMG\" \"$ZIP\" \"$DIST/appcast.xml\" --title \"Side Eye $VERSION\" \\"
+echo "    --notes-file \"$DIST/github-notes.md\" --generate-notes"

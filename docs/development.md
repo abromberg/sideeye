@@ -29,6 +29,7 @@ CODE_SIGN_IDENTITY = <certificate name or SHA-1>
 
 ```sh
 open -a "Side Eye" --args --demo=on        # also idle, unsure, off, done, break, credit, credit-idle, error, or cycle
+open -a "Side Eye" --args --demo=hardcore  # hardcore mode's cover (or --demo=really); demos never save it or block quitting
 open -a "Side Eye" --args --demo=off -panelStyle compact -demoTitle "Some window"
 open -a "Side Eye" --args --show-welcome   # or --show-settings, --show-menu-preview
 ```
@@ -113,12 +114,13 @@ One-time setup:
 For each release:
 
 1. Bump `MARKETING_VERSION` in `project.yml`, and always raise `CURRENT_PROJECT_VERSION`. Sparkle compares that number to decide what's newer.
-2. Build, sign, notarize and write the appcast:
+2. Write what's new in `release-notes/<version>.md`, e.g. `release-notes/1.1.0.md`. It's Markdown, shown in the update window when Side Eye offers the update, and at the top of the GitHub release. The release script won't start without it.
+3. Build, sign, notarize and write the appcast:
    ```sh
    DEVELOPER_ID="Developer ID Application: Experimental LLC (<team ID>)" scripts/release.sh
    ```
    `Side-Eye.dmg`, `Side-Eye.zip` and `appcast.xml` end up in `build/release/dist/`. The disk image is what people download; it opens to a window where they drag Side Eye into Applications. The zip is what Sparkle installs updates from. Both keep the same names every release, so the README's download link (`releases/latest/download/Side-Eye.dmg`) always points at the newest version. Finder lays out the disk image's window, so the first release from a Mac asks to let Terminal control Finder.
-3. Publish with the `gh release create` command the script prints.
+4. Publish with the `gh release create` command the script prints. It uses the same release notes.
 
 ## Tuning with focuseval
 

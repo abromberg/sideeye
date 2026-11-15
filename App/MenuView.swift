@@ -8,6 +8,11 @@ struct MenuView: View {
     @State private var taskSelection: TextSelection?
     /// Editing the task mid-block to move on to another one.
     @State private var switchingTask = false
+    /// Choosing how hard and how long, before going hardcore.
+    @State private var settingUpHardcore = false
+    @State private var hardcoreLevel = HardcoreLevel.hardcore
+    @State private var hardcoreLength = HardcoreLength.hours(2)
+    @State private var customHours = ""
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -31,17 +36,29 @@ struct MenuView: View {
                     .padding(.horizontal, 4)
             }
 
+            if model.hardcoreActive {
+                hardcoreCard
+            } else if settingUpHardcore {
+                hardcoreSetupCard
+            }
+
             Divider().padding(.horizontal, 4)
 
             VStack(spacing: 0) {
+                if !model.hardcoreActive && !settingUpHardcore {
+                    MenuRow("Go Hardcore…") { settingUpHardcore = true }
+                }
                 MenuRow("Show Floating Window", checked: settings.showFloatingPanel) {
                     settings.showFloatingPanel.toggle()
                 }
                 MenuRow("Settings…", shortcut: "⌘,") { showSettings() }
                     .keyboardShortcut(",", modifiers: .command)
                 MenuRow("Check for Updates…") { Updater.shared.checkForUpdates() }
-                MenuRow("Quit Side Eye", shortcut: "⌘Q") { NSApp.terminate(nil) }
-                    .keyboardShortcut("q", modifiers: .command)
+                // Really hardcore can't be quit.
+                if !model.reallyHardcore {
+                    MenuRow("Quit Side Eye", shortcut: "⌘Q") { NSApp.terminate(nil) }
+                        .keyboardShortcut("q", modifiers: .command)
+                }
             }
         }
         .padding(10)
@@ -102,6 +119,124 @@ struct MenuView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    // MARK: Hardcore
+
+    private var hardcoreLengths: [HardcoreLength] {
+        HardcoreLength.presets.filter { hardcoreLevel == .hardcore || $0 != .always }
+    }
+
+    private var hardcoreEnd: Date? {
+        hardcoreLength.end(from: model.now, customHours: Double(customHours.replacingOccurrences(of: ",", with: ".")))
+    }
+
+    /// Always is the only length without an end; anything else needs one (a custom length needs a number).
+    private var canGoHardcore: Bool { hardcoreLength == .always || hardcoreEnd != nil }
+
+    private var hardcoreSetupCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Go Hardcore", systemImage: "flame.fill").font(.headline)
+                Text("Covers your screen whenever no pomodoro or break is running.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Picker("Level", selection: $hardcoreLevel) {
+                ForEach(HardcoreLevel.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack(spacing: 6) {
+                Picker("Length", selection: $hardcoreLength) {
+                    ForEach(hardcoreLengths) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                if hardcoreLength == .custom {
+                    TextField("Hours", text: $customHours, prompt: Text("2.5"))
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.center)
+                        .frame(width: 36)
+                        .padding(.vertical, 3)
+                        .padding(.horizontal, 4)
+                        .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .onSubmit(goHardcore)
+                    Text("hours").fixedSize()
+                }
+            }
+            .font(.callout)
+
+            Text(hardcoreTerms)
+                .font(.caption)
+                .foregroundStyle(hardcoreLevel == .really ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { settingUpHardcore = false }
+                Button(hardcoreLevel == .really ? "Lock In" : "Go Hardcore", action: goHardcore)
+                    .buttonStyle(.borderedProminent)
+                    .tint(hardcoreLevel == .really ? .red : .accentColor)
+                    .disabled(!canGoHardcore)
+            }
+        }
+        .padding(12)
+        .background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onChange(of: hardcoreLevel) {
+            if !hardcoreLengths.contains(hardcoreLength) { hardcoreLength = .hours(2) }
+        }
+    }
+
+    /// When it ends and what you can do about it, so really hardcore says exactly what you're signing up for.
+    private var hardcoreTerms: String {
+        let until = hardcoreEnd.map { "Until \(HardcoreCommitment.endText($0, now: model.now)). " } ?? ""
+        switch hardcoreLevel {
+        case .hardcore:
+            return hardcoreLength == .always ? "Until you turn it off from the cover." : until + "You can turn it off from the cover."
+        case .really:
+            return until + "Can't be turned off or quit, and reopens if it's closed."
+        }
+    }
+
+    private func goHardcore() {
+        guard canGoHardcore else { return }
+        model.goHardcore(hardcoreLevel, until: hardcoreLength == .always ? nil : hardcoreEnd)
+        settingUpHardcore = false
+    }
+
+    private var hardcoreCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(model.reallyHardcore ? "Really hardcore" : "Hardcore",
+                      systemImage: model.reallyHardcore ? "lock.fill" : "flame.fill")
+                    .font(.headline)
+                Spacer()
+                if model.hardcore?.canTurnOff == true {
+                    Button("Turn Off") { model.turnOffHardcore() }
+                        .controlSize(.small)
+                }
+            }
+            Text(model.hardcoreRemaining)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if model.reallyHardcore, KeepAlive.needsApproval {
+                Text("Allow Side Eye in Login Items so it can reopen if it's closed.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Login Items…") { KeepAlive.openLoginItemsSettings() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((model.reallyHardcore ? Color.red : Color.orange).opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: States

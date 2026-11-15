@@ -122,6 +122,16 @@ struct MenuBarLabel: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated { _ = Updater.shared }
+        // Logging out, restarting and shutting down mustn't be held up by hardcore mode.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil,
+                                                          queue: .main) { _ in
+            MainActor.assumeIsolated { QuitGuard.allowQuit = true }
+        }
+    }
+
+    /// Hardcore mode: no quitting while the cover is up, or at all during really hardcore. See `QuitGuard`.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated { QuitGuard.shouldTerminate() ? .terminateNow : .terminateCancel }
     }
 
     /// Closing Settings must not quit the app (with the menu bar icon hidden it's the only regular window).

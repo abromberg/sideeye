@@ -352,8 +352,10 @@ struct FloatingStatusView: View {
         Button(settings.showMenuBarIcon ? "Hide Menu Bar Icon" : "Show Menu Bar Icon") {
             settings.showMenuBarIcon.toggle()
         }
-        Divider()
-        Button("Quit Side Eye") { NSApp.terminate(nil) }
+        if !model.reallyHardcore {
+            Divider()
+            Button("Quit Side Eye") { NSApp.terminate(nil) }
+        }
     }
 
     private var full: some View {
